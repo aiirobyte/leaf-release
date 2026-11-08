@@ -51,7 +51,7 @@ jobs:
         with:
           repository: aiirobyte/leaf
           ref: ${{ steps.release.outputs.ref }}
-          token: ${{ secrets.LEAF_SOURCE_TOKEN }}
+          ssh-key: ${{ secrets.LEAF_SOURCE_SSH_KEY }}
           path: leaf
 
       - uses: oven-sh/setup-bun@v2
