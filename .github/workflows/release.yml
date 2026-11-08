@@ -72,6 +72,7 @@ jobs:
           apps/runner/test/local-models.test.ts
           packages/rowan-ext/test/process.test.ts
           scripts/install.test.ts
+          scripts/publish-cli-release.test.ts
           scripts/r2-client.test.ts
           scripts/release-cli.test.ts
           scripts/verify-cli-release.test.ts
