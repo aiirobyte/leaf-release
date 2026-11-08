@@ -1,6 +1,9 @@
 name: release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -15,18 +18,39 @@ permissions:
   contents: write
 
 concurrency:
-  group: leaf-release-${{ inputs.version }}
+  group: leaf-release-${{ inputs.version || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve release
+        id: release
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$REQUESTED_VERSION"
+            REF="$REQUESTED_REF"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            REF="$GITHUB_REF_NAME"
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Invalid release version: $VERSION" >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+          printf 'ref=%s\n' "$REF" >> "$GITHUB_OUTPUT"
+
       - name: Check out Leaf source
         uses: actions/checkout@v5
         with:
           repository: aiirobyte/leaf
-          ref: ${{ inputs.ref }}
+          ref: ${{ steps.release.outputs.ref }}
           token: ${{ secrets.LEAF_SOURCE_TOKEN }}
           path: leaf
 
@@ -60,11 +84,11 @@ jobs:
           LEAF_DEFAULT_SERVER_URL: ${{ vars.LEAF_DEFAULT_SERVER_URL }}
         run: |
           test -n "$LEAF_DEFAULT_SERVER_URL"
-          bun run release:cli --version "${{ inputs.version }}" --out dist/cli
+          bun run release:cli --version "${{ steps.release.outputs.version }}" --out dist/cli
 
       - name: Verify CLI artifacts
         working-directory: leaf
-        run: bun scripts/verify-cli-release.ts "dist/cli/${{ inputs.version }}"
+        run: bun scripts/verify-cli-release.ts "dist/cli/${{ steps.release.outputs.version }}"
 
       - name: Publish GitHub Release and R2 mirror
         working-directory: leaf
@@ -78,14 +102,14 @@ jobs:
           LEAF_CLI_RELEASES_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
         run: >-
           bun scripts/publish-cli-release.ts
-          --version "${{ inputs.version }}"
-          --assets "dist/cli/${{ inputs.version }}"
+          --version "${{ steps.release.outputs.version }}"
+          --assets "dist/cli/${{ steps.release.outputs.version }}"
           --repo "${{ github.repository }}"
           --target main
 
       - name: Smoke test the public latest manifest
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
           RELEASES_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
         run: |
           curl -fsSL "$RELEASES_URL/releases/cli/latest.json" -o /tmp/leaf-latest.json
