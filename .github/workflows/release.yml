@@ -1,0 +1,92 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Leaf CLI version, for example 0.1.18"
+        required: true
+      ref:
+        description: "Leaf source branch, tag, or commit"
+        required: true
+        default: master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: leaf-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Leaf source
+        uses: actions/checkout@v4
+        with:
+          repository: aiirobyte/leaf
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.LEAF_SOURCE_TOKEN }}
+          path: leaf
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        working-directory: leaf
+        run: bun install --frozen-lockfile
+
+      - name: Verify
+        working-directory: leaf
+        run: >-
+          bun run typecheck &&
+          bun test --max-concurrency=1 --timeout=30000
+          apps/runner/test/service.test.ts
+          apps/runner/test/maintenance.test.ts
+          apps/runner/test/local-models.test.ts
+          packages/rowan-ext/test/process.test.ts
+          scripts/install.test.ts
+          scripts/r2-client.test.ts
+          scripts/release-cli.test.ts
+          scripts/verify-cli-release.test.ts
+          apps/server/test/install-scripts.test.ts
+          apps/server/test/cli-releases.test.ts
+
+      - name: Build CLI artifacts
+        working-directory: leaf
+        env:
+          LEAF_DEFAULT_SERVER_URL: ${{ vars.LEAF_DEFAULT_SERVER_URL }}
+        run: |
+          test -n "$LEAF_DEFAULT_SERVER_URL"
+          bun run release:cli --version "${{ inputs.version }}" --out dist/cli
+
+      - name: Verify CLI artifacts
+        working-directory: leaf
+        run: bun scripts/verify-cli-release.ts "dist/cli/${{ inputs.version }}"
+
+      - name: Publish GitHub Release and R2 mirror
+        working-directory: leaf
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          LEAF_CLI_RELEASES_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+        run: >-
+          bun scripts/publish-cli-release.ts
+          --version "${{ inputs.version }}"
+          --assets "dist/cli/${{ inputs.version }}"
+          --repo "${{ github.repository }}"
+          --target main
+
+      - name: Smoke test the public latest manifest
+        env:
+          VERSION: ${{ inputs.version }}
+          RELEASES_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+        run: |
+          curl -fsSL "$RELEASES_URL/releases/cli/latest.json" -o /tmp/leaf-latest.json
+          grep -q "\"version\": \"$VERSION\"" /tmp/leaf-latest.json
