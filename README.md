@@ -2,11 +2,11 @@
 
 Release artifacts for the Leaf CLI.
 
-Source code lives in [aiirobyte/leaf](https://github.com/aiirobyte/leaf).
+Learn more about Leaf at [leaf.rowan.today](https://leaf.rowan.today).
 The `release` workflow builds a requested Leaf source ref and publishes the
 artifacts to this repository and the R2 download mirror.
 Pushing a `v*` tag to this repository starts a release; the same tag must exist
-in the private `aiirobyte/leaf` source repository.
+in the Leaf source repository.
 
 ## Install
 
